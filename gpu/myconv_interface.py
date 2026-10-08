@@ -25,7 +25,8 @@ w = torch.randn(C_out, C_in, KH, KW, device="cuda", dtype=torch.float32)
 with profile(activities=[ProfilerActivity.CUDA],) as prof:
     out_custom = conv_module.conv_cuda(x, w, stride, pad)
 
-    prof.export_chrome_trace("myconv_cuda.json")
+
+prof.export_chrome_trace("myconv_cuda.json")
 
 # Reference solution (PyTorch)
 out_ref = torch.nn.functional.conv2d(x, w, stride=stride, padding=pad)
