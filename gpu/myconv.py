@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.profiler import profile, record_function, ProfilerActivity
 import json
+import time
 
 class ConvModel(nn.Module):
     def __init__(self, H, W, in_channels=3, out_channels=8, kernel_size=3, stride=1, padding=1):
@@ -100,11 +101,16 @@ if __name__ == "__main__":
     model = ConvModel(H, W, C, out_channels, kernel_size, stride=S, padding=P).cuda().eval()
 
 
+    start = time.perf_counter()
+
     with profile(
     activities=[ProfilerActivity.CUDA],
 ) as prof:
         out = model(x)
 
+    end = time.perf_counter()
+    exe_time = end - start
+    print(f"Execution Time: {exe_time * 1000:.2f} ms")
     prof.export_chrome_trace("myconv.json")
 
     # Test your solution

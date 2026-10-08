@@ -32,9 +32,12 @@ x = torch.randn(N, C_in, H, W, device="cuda", dtype=torch.float32)
 w = torch.randn(C_out, C_in, KH, KW, device="cuda", dtype=torch.float32)
 
 # Run o4 kernel
+start = time.perf_counter()
 with profile(activities=[ProfilerActivity.CUDA],) as prof:
     out_custom = conv_module.conv_cuda(x, w, stride, pad)
-
+end = time.perf_counter()
+exe_time = end - start
+print(f"Execution Time: {exe_time * 1000:.2f} ms")
 
 prof.export_chrome_trace("myconv_cuda.json")
 

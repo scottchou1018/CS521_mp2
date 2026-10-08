@@ -110,9 +110,12 @@ if __name__ == "__main__":
     print(f"JAX Compilation Time: {compile_time * 1000:.2f} ms")
 
     # call your JAX function
+    start = time.perf_counter()
     with jax.profiler.trace("./jax_trace", create_perfetto_trace=True):
         out_jax = conv2d_manual_jax_jit(x_jax, weight_jax, bias_jax, stride = S).block_until_ready()
-
+    end = time.perf_counter()
+    exe_time = end - start
+    print(f"Execution Time: {exe_time * 1000:.2f} ms")
 
     # # Test your solution
     conv_ref = F.conv2d(x_torch, model.weight, model.bias, stride=S, padding=P)

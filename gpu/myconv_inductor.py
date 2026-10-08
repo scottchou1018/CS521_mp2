@@ -42,8 +42,12 @@ if __name__ == "__main__":
     print(f"Inductor Host Compilation Time: {compilation_time * 1000:.2f} ms")
 
 
+    start = time.perf_counter()
     with profile(activities=[ProfilerActivity.CUDA]) as prof:
         out = scripted_model(x)
+    end = time.perf_counter()
+    exe_time = end - start
+    print(f"Execution Time: {exe_time * 1000:.2f} ms")
 
     prof.export_chrome_trace("myconv_inductor.json")
     
