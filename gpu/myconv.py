@@ -41,12 +41,17 @@ class ConvModel(nn.Module):
 
         # TO DO: Convert input (x) into shape (N, out_h*out_w, C*KH*KW). 
         # Refer to Lecture 3 for implementing this operation.
-        patches = []
-        
-        for i in range(0, h - KH + 1, S):
-            for j in range(0, w - KW + 1, S):
-                patches.append(x_pad[:, :, i: i + KH, j : j + KW].flatten(1))
-        patches = torch.stack(patches, 1)
+
+        k_i = torch.arange(0, KH, 1)
+        k_j = torch.arange(0, KW, 1)
+        h_i = torch.arange(0, h - KH + 1, S)
+        h_j = torch.arange(0, w - KW + 1, S)
+        h_i = h_i[:, None, None, None] + k_i[None, None, :, None]
+        h_j = h_j[None, :, None, None] + k_j[None, None, None, :]
+
+        patches = x_pad[:, :, h_i, h_j]
+        patches = patches.permute(0, 2, 3, 1, 4, 5).reshape((N, out_h * out_w, C * KH * KW))
+
 
         return patches
 

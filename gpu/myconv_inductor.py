@@ -9,10 +9,10 @@ if __name__ == "__main__":
     torch.manual_seed(0)
 
     # Instantiate your PyTorch model
-    N, C, H, W = 4, 16, 100, 100
+    N, C, H, W = 4, 8, 22, 22
     x = torch.randn(N, C, H, W).cuda()
     
-    model = ConvModel(H, W, in_channels=16, out_channels=16, kernel_size=3, stride=1, padding=1).cuda().eval()
+    model = ConvModel(H, W, in_channels=8, out_channels=8, kernel_size=3, stride=1, padding=1).cuda().eval()
 
     # Torch-Inductor compilation
     scripted_model = torch.compile(model, backend="inductor")

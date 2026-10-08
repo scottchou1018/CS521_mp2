@@ -22,16 +22,21 @@ def im2col_manual_jax(x, KH, KW, S, P, out_h, out_w):
 
     # Pad input
     x_pad = jnp.pad(x, ((0,0),(0,0),(P,P),(P,P)))
+    _, _, h, w = x_pad.shape
 
     # TO DO: Convert input (x) into shape (N, out_h*out_w, C*KH*KW). 
     # Refer to Lecture 3 for implementing this operation.
 
-    patches = []
-    _, _, h, w = x_pad.shape
-    for i in range(0, h - KH + 1, S):
-        for j in range(0, w - KW + 1, S):
-            patches.append(jnp.reshape(x_pad[:, :, i: i + KH, j : j + KW], (N, C * KH * KW)))
-    patches = jnp.stack(patches, 1)
+    k_i = jnp.arange(0, KH, 1)
+    k_j = jnp.arange(0, KW, 1)
+    h_i = jnp.arange(0, h - KH + 1, S)
+    h_j = jnp.arange(0, w - KW + 1, S)
+    h_i = h_i[:, None, None, None] + k_i[None, None, :, None]
+    h_j = h_j[None, :, None, None] + k_j[None, None, None, :]
+
+    patches = x_pad[:, :, h_i, h_j]
+    patches = jnp.reshape(jnp.permute_dims(patches, (0, 2, 3, 1, 4, 5)), ((N, out_h * out_w, C * KH * KW)))
+
     
     return patches
 
@@ -71,12 +76,13 @@ def conv2d_manual_jax(x, weight, bias, stride=1, padding=1):
 if __name__ == "__main__":
     # Instantiate PyTorch model
     H, W = 100, 100
+    C = 16
     S = 1
-    model = ConvModel(H, W, in_channels=16, out_channels=16, kernel_size=3, stride=S, padding=1)
+    model = ConvModel(H, W, in_channels=C, out_channels=C, kernel_size=3, stride=S, padding=1)
     model.eval()
 
     # Example input
-    x_torch = torch.randn(1, 3, H, W)
+    x_torch = torch.randn(1, C, H, W)
 
     # Export weights and biases
     params = {
