@@ -87,9 +87,7 @@ if __name__ == "__main__":
     model = ConvModel(H, W, C, out_channels, kernel_size, stride=1, padding=1)
 
     with profile(
-    activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-    record_shapes=True,
-    profile_memory=True,
+    activities=[ProfilerActivity.CUDA],
 ) as prof:
         out = model(x)
 

@@ -7,6 +7,7 @@ import torch
 from myconv import ConvModel
 import jax.profiler
 import torch.utils.dlpack as tdl
+import time
 
 # Create a log directory
 logdir = "./jax_trace"
@@ -70,7 +71,8 @@ def conv2d_manual_jax(x, weight, bias, stride=1, padding=1):
 if __name__ == "__main__":
     # Instantiate PyTorch model
     H, W = 33, 33
-    model = ConvModel(H, W, in_channels=3, out_channels=8, kernel_size=5, stride=2, padding=1)
+    S = 1
+    model = ConvModel(H, W, in_channels=3, out_channels=8, kernel_size=5, stride=S, padding=1)
     model.eval()
 
     # Example input
@@ -89,12 +91,19 @@ if __name__ == "__main__":
 
     # enable JIT compilation
     conv2d_manual_jax_jit = jit(conv2d_manual_jax, static_argnames="stride")
+    lowered = conv2d_manual_jax_jit.lower(x_jax, weight_jax, bias_jax, stride = S)
+
+    start_compile = time.perf_counter()
+    compiled = lowered.compile()
+    compile_time = time.perf_counter() - start_compile
+    print(f"JAX Compilation Time: {compile_time * 1000:.2f} ms")
 
     # call your JAX function
-    out_jax = conv2d_manual_jax_jit(x_jax, weight_jax, bias_jax, stride = 2)
-    out_jax = torch.tensor(np.array(out_jax))
+    with jax.profiler.trace("./jax_trace", create_perfetto_trace=True):
+        out_jax = conv2d_manual_jax_jit(x_jax, weight_jax, bias_jax, stride = S).block_until_ready()
+
 
     # # Test your solution
-    conv_ref = F.conv2d(x_torch, model.weight, model.bias, stride=2, padding=1)
+    conv_ref = F.conv2d(x_torch, model.weight, model.bias, stride=S, padding=1)
     print("JAX --- shape check:", out_jax.shape == conv_ref.shape)
     print("JAX --- correctness check:", torch.allclose(torch.from_numpy(np.array(out_jax)), conv_ref, atol=1e-1))
