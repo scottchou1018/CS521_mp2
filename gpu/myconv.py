@@ -19,13 +19,12 @@ class ConvModel(nn.Module):
         # TO DO: Define static shapes here. 
 
         # Precompute output size
-        # self.out_h = ...
-        # self.out_w = ...
+        self.out_h = (H + padding * 2 - (kernel_size - 1) + stride - 1) // stride
+        self.out_w = (W + padding * 2 - (kernel_size - 1) + stride - 1) // stride
+
 
         self.weight = nn.Parameter(torch.randn(out_channels, in_channels, kernel_size, kernel_size))
         self.bias = nn.Parameter(torch.zeros(out_channels))
-
-        
 
     def im2col_manual(self, x):
         N = x.shape[0]        # batch size can remain dynamic
@@ -38,12 +37,18 @@ class ConvModel(nn.Module):
 
         # Pad input
         x_pad = F.pad(x, (P, P, P, P))
+        _, _, h, w = x_pad.shape
 
         # TO DO: Convert input (x) into shape (N, out_h*out_w, C*KH*KW). 
         # Refer to Lecture 3 for implementing this operation.
+        patches = []
         
-        # patches = ...
-        # return patches
+        for i in range(0, h - KH + 1, S):
+            for j in range(0, w - KW + 1, S):
+                patches.append(x_pad[:, :, i: i + KH, j : j + KW].flatten(1))
+        patches = torch.stack(patches, 1)
+
+        return patches
 
     def conv2d_manual(self, x):
         N = x.shape[0]
@@ -51,19 +56,23 @@ class ConvModel(nn.Module):
         KH = KW = self.kernel_size
 
         # TO DO: 1) convert input (x) into shape (N, out_h*out_w, C*KH*KW).
-        # cols = self.im2col_manual(x)          
+        cols = self.im2col_manual(x) 
 
         # TO DO: 2) flatten self.weight into shape (C_out, C*KH*KW).
-
+        w = self.weight.flatten(1)
+        w = w.permute(1, 0)
+        
         # TO DO: 3) perform tiled matmul after required reshaping is done.
+        out = torch.matmul(cols, w) # (N, out_h*out_w, C_out)
 
         # TO DO: 4) Add bias.
-
+        out = torch.add(out, self.bias)
         # TO DO: 5) reshape output into shape (N, C_out, out_h, out_w).
+        out = torch.permute(out, (0, 2, 1))
+        out = torch.reshape(out, (N, C_out, self.out_h, self.out_w))
 
 
-
-        #return out
+        return out
 
     def forward(self, x):
         return self.conv2d_manual(x)
@@ -71,14 +80,23 @@ class ConvModel(nn.Module):
 
 if __name__ == "__main__":
     torch.manual_seed(0)
-    N, C, H, W = 2, 4, 22, 22
+    N, C, H, W = 1, 16, 100, 100
     x = torch.randn(N, C, H, W)
-    out_channels=8
-    kernel_size=7
+    out_channels=16
+    kernel_size=3
     model = ConvModel(H, W, C, out_channels, kernel_size, stride=1, padding=1)
-    out = model(x)
+
+    with profile(
+    activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    record_shapes=True,
+    profile_memory=True,
+) as prof:
+        out = model(x)
+
+    prof.export_chrome_trace("myconv.json")
 
     # Test your solution
+
     conv_ref = F.conv2d(x, model.weight, model.bias, stride=1, padding=1)
     print("PyTorch --- shape check:", out.shape == conv_ref.shape)
     print("PyTorch --- correctness check:", torch.allclose(out, conv_ref, atol=1e-4))

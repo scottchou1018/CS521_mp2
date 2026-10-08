@@ -7,9 +7,9 @@ conv_module = load(name="myconv",
                      verbose=True)
 
 # Input parameters
-N, C_in, H, W = 4, 3, 25, 25
-C_out, KH, KW = 4, 6, 6
-stride, pad = 1, 1
+N, C_in, H, W = 4, 3, 30, 25
+C_out, KH, KW = 4, 5, 5
+stride, pad = 2, 3
 
 # Allocate tensors
 x = torch.randn(N, C_in, H, W, device="cuda", dtype=torch.float32)
