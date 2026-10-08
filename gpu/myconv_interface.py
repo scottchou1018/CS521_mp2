@@ -13,9 +13,9 @@ compile_time = time.perf_counter() - start_compile
 print(f"CUDA Compilation Time: {compile_time:.2f} seconds")
 
 # Input parameters
-N, C_in, H, W = 4, 3, 30, 25
-C_out, KH, KW = 4, 5, 5
-stride, pad = 2, 3
+N, C_in, H, W = 4, 16, 100, 100
+C_out, KH, KW = 16, 3, 3
+stride, pad = 1, 1
 
 # Allocate tensors
 x = torch.randn(N, C_in, H, W, device="cuda", dtype=torch.float32)
@@ -24,6 +24,8 @@ w = torch.randn(C_out, C_in, KH, KW, device="cuda", dtype=torch.float32)
 # Run o4 kernel
 with profile(activities=[ProfilerActivity.CUDA],) as prof:
     out_custom = conv_module.conv_cuda(x, w, stride, pad)
+
+    prof.export_chrome_trace("myconv_cuda.json")
 
 # Reference solution (PyTorch)
 out_ref = torch.nn.functional.conv2d(x, w, stride=stride, padding=pad)

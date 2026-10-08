@@ -80,7 +80,7 @@ class ConvModel(nn.Module):
 
 if __name__ == "__main__":
     torch.manual_seed(0)
-    N, C, H, W = 1, 16, 100, 100
+    N, C, H, W = 4, 16, 100, 100
     x = torch.randn(N, C, H, W)
     out_channels=16
     kernel_size=3
