@@ -72,6 +72,8 @@ __global__ void gemm_gpu_o4_kernel(
     if(bx * TILE_H + tx < out_h && by * TILE_W + ty < out_w){
         out[n * C_out * out_h * out_w + i_out * out_h * out_w + (bx * TILE_H + tx) * out_w + (by * TILE_W + ty)] = sum;
     }
+    extern __shared__ float shmem[];
+
 }
 
 // Function for Python binding
