@@ -2,6 +2,9 @@ import torch
 from torch.utils.cpp_extension import load
 from torch.profiler import profile, ProfilerActivity
 import time
+import json
+
+torch.backends.cudnn.allow_tf32 = False
 
 # Compile and load CUDA extension
 start_compile = time.perf_counter()
@@ -13,9 +16,16 @@ compile_time = time.perf_counter() - start_compile
 print(f"CUDA Compilation Time: {compile_time:.2f} seconds")
 
 # Input parameters
-N, C_in, H, W = 4, 16, 100, 100
-C_out, KH, KW = 16, 3, 3
-stride, pad = 1, 1
+
+with open("config.json") as config_file:
+    config = json.load(config_file)
+    
+    N, C, H, W, K, S, P = config['N'], config['C'], config['H'], config['W'], config['K'], config['S'], config['P']
+
+
+C_in = C
+C_out, KH, KW = C, K, K
+stride, pad = S, P
 
 # Allocate tensors
 x = torch.randn(N, C_in, H, W, device="cuda", dtype=torch.float32)
@@ -34,3 +44,4 @@ out_ref = torch.nn.functional.conv2d(x, w, stride=stride, padding=pad)
 # Test shape and correctness
 print("CUDA --- shape check:", out_custom.shape == out_ref.shape)
 print("CUDA --- correctness check:", torch.allclose(out_custom, out_ref, atol=1e-4))
+print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))

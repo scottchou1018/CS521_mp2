@@ -8,6 +8,7 @@ from myconv import ConvModel
 import jax.profiler
 import torch.utils.dlpack as tdl
 import time
+import json
 
 # Create a log directory
 logdir = "./jax_trace"
@@ -75,10 +76,14 @@ def conv2d_manual_jax(x, weight, bias, stride=1, padding=1):
 
 if __name__ == "__main__":
     # Instantiate PyTorch model
-    H, W = 100, 100
-    C = 16
-    S = 1
-    model = ConvModel(H, W, in_channels=C, out_channels=C, kernel_size=3, stride=S, padding=1)
+    
+    with open("config.json") as config_file:
+        config = json.load(config_file)
+    
+    N, C, H, W, K, S, P = config['N'], config['C'], config['H'], config['W'], config['K'], config['S'], config['P']
+
+
+    model = ConvModel(H, W, in_channels=C, out_channels=C, kernel_size=K, stride=S, padding=P)
     model.eval()
 
     # Example input
@@ -110,6 +115,6 @@ if __name__ == "__main__":
 
 
     # # Test your solution
-    conv_ref = F.conv2d(x_torch, model.weight, model.bias, stride=S, padding=1)
+    conv_ref = F.conv2d(x_torch, model.weight, model.bias, stride=S, padding=P)
     print("JAX --- shape check:", out_jax.shape == conv_ref.shape)
     print("JAX --- correctness check:", torch.allclose(torch.from_numpy(np.array(out_jax)), conv_ref, atol=1e-1))

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.profiler import profile, record_function, ProfilerActivity
+import json
 
 class ConvModel(nn.Module):
     def __init__(self, H, W, in_channels=3, out_channels=8, kernel_size=3, stride=1, padding=1):
@@ -42,10 +43,10 @@ class ConvModel(nn.Module):
         # TO DO: Convert input (x) into shape (N, out_h*out_w, C*KH*KW). 
         # Refer to Lecture 3 for implementing this operation.
 
-        k_i = torch.arange(0, KH, 1)
-        k_j = torch.arange(0, KW, 1)
-        h_i = torch.arange(0, h - KH + 1, S)
-        h_j = torch.arange(0, w - KW + 1, S)
+        k_i = torch.arange(0, KH, 1, device=x.device)
+        k_j = torch.arange(0, KW, 1, device=x.device)
+        h_i = torch.arange(0, h - KH + 1, S, device=x.device)
+        h_j = torch.arange(0, w - KW + 1, S, device=x.device)
         h_i = h_i[:, None, None, None] + k_i[None, None, :, None]
         h_j = h_j[None, :, None, None] + k_j[None, None, None, :]
 
@@ -85,11 +86,19 @@ class ConvModel(nn.Module):
 
 if __name__ == "__main__":
     torch.manual_seed(0)
-    N, C, H, W = 4, 16, 100, 100
-    x = torch.randn(N, C, H, W)
-    out_channels=16
-    kernel_size=3
-    model = ConvModel(H, W, C, out_channels, kernel_size, stride=1, padding=1)
+
+    with open("config.json") as config_file:
+        config = json.load(config_file)
+    
+    N, C, H, W, K, S, P = config['N'], config['C'], config['H'], config['W'], config['K'], config['S'], config['P']
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    x = torch.randn(N, C, H, W, device=device)
+    out_channels=C
+    kernel_size=K
+    model = ConvModel(H, W, C, out_channels, kernel_size, stride=S, padding=P).cuda().eval()
+
 
     with profile(
     activities=[ProfilerActivity.CUDA],
@@ -100,6 +109,7 @@ if __name__ == "__main__":
 
     # Test your solution
 
-    conv_ref = F.conv2d(x, model.weight, model.bias, stride=1, padding=1)
+    conv_ref = F.conv2d(x, model.weight, model.bias, stride=S, padding=P)
     print("PyTorch --- shape check:", out.shape == conv_ref.shape)
     print("PyTorch --- correctness check:", torch.allclose(out, conv_ref, atol=1e-4))
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))

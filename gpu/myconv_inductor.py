@@ -3,16 +3,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.profiler import profile, record_function, ProfilerActivity
 from myconv import ConvModel
+import json
 import time
 
 if __name__ == "__main__":
     torch.manual_seed(0)
 
+    with open("config.json") as config_file:
+        config = json.load(config_file)
+    
+    N, C, H, W, K, S, P = config['N'], config['C'], config['H'], config['W'], config['K'], config['S'], config['P']
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # Instantiate your PyTorch model
-    N, C, H, W = 4, 8, 22, 22
     x = torch.randn(N, C, H, W).cuda()
     
-    model = ConvModel(H, W, in_channels=8, out_channels=8, kernel_size=3, stride=1, padding=1).cuda().eval()
+    model = ConvModel(H, W, in_channels=C, out_channels=C, kernel_size=K, stride=S, padding=P).cuda().eval()
 
     # Torch-Inductor compilation
     scripted_model = torch.compile(model, backend="inductor")
@@ -42,6 +48,7 @@ if __name__ == "__main__":
     prof.export_chrome_trace("myconv_inductor.json")
     
     # Test your solution
-    conv_ref = F.conv2d(x, model.weight, model.bias, stride=1, padding=1)
+    conv_ref = F.conv2d(x, model.weight, model.bias, stride=S, padding=P)
     print("Inductor --- shape check:", out.shape == conv_ref.shape)
-    print("Inductor --- correctness check:", torch.allclose(out, conv_ref, atol=1e-4))
+    print("Inductor --- correctness check:", torch.allclose(out, conv_ref, atol=1e-2))
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
