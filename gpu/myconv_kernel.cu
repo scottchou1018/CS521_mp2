@@ -32,38 +32,42 @@ __global__ void gemm_gpu_o4_kernel(
     int input_w = 1 + (TILE_W - 1) * stride + KW - 1;
 
 
-    float *kernel = shmem; // KH * KW
-    float *input = shmem + KH * KW; // input_h * input_w
+    float *kernel = shmem; // TILE_C * KH * KW
+    float *input = shmem + TILE_C * KH * KW; // TILE_C input_h * input_w
     float sum = 0;
-    for(int c = 0; c < C_in; c++){
-        // load kernel
-        for(int x = 0; x < KH; x += TILE_H){
-            for(int y = 0; y < KW; y += TILE_W){
-                if(x + tx < KH && y + ty < KW){
-                    kernel[(x + tx) * KW + y + ty] = 
-                    w[i_out * C_in * KH * KW + c * KH * KW + (x + tx) * KW + y + ty];
+    for(int c = 0; c < C_in; c += TILE_C){
+        for(int j = 0; j < TILE_C && c + j < C_in; j++){
+            // load kernel
+            for(int x = 0; x < KH; x += TILE_H){
+                for(int y = 0; y < KW; y += TILE_W){
+                    if(x + tx < KH && y + ty < KW){
+                        kernel[j * KH * KW + (x + tx) * KW + y + ty] = 
+                        w[i_out * C_in * KH * KW + (c + j) * KH * KW + (x + tx) * KW + y + ty];
+                    }
                 }
             }
-        }
-        // load input
-        for(int x = 0; x < input_h; x += TILE_H){
-            for(int y = 0; y < input_w; y += TILE_W){
-                if(x + tx < input_h && y + ty < input_w){
-                    int x_id = x + low_x, y_id = y + low_y;
-                    int tmp_id = (x + tx) * input_w + (y + ty);
-                    if(x_id + tx >= 0 && x_id + tx < H && y_id + ty >= 0 && y_id + ty < W){
-                        input[tmp_id] = in[n * C_in * H * W + c * H * W + (x_id + tx) * W + (y_id + ty)];
-                    }else{
-                        input[tmp_id] = 0;
+            // load input
+            for(int x = 0; x < input_h; x += TILE_H){
+                for(int y = 0; y < input_w; y += TILE_W){
+                    if(x + tx < input_h && y + ty < input_w){
+                        int x_id = x + low_x, y_id = y + low_y;
+                        int tmp_id = j * input_h * input_w + (x + tx) * input_w + (y + ty);
+                        if(x_id + tx >= 0 && x_id + tx < H && y_id + ty >= 0 && y_id + ty < W){
+                            input[tmp_id] = in[n * C_in * H * W + (c + j) * H * W + (x_id + tx) * W + (y_id + ty)];
+                        }else{
+                            input[tmp_id] = 0;
+                        }
                     }
                 }
             }
         }
         __syncthreads();
-        for(int x = 0; x < KH; x++){
-            for(int y = 0; y < KW; y++){
-                sum += kernel[x * KW + y] * 
-                input[(tx * stride + x) * input_w + (ty * stride + y)];
+        for(int j = 0; j < TILE_C && c + j < C_in; j++){
+            for(int x = 0; x < KH; x++){
+                for(int y = 0; y < KW; y++){
+                    sum += kernel[j * KH * KW + x * KW + y] * 
+                    input[j * input_h * input_w + (tx * stride + x) * input_w + (ty * stride + y)];
+                }
             }
         }
 
@@ -99,7 +103,7 @@ torch::Tensor conv_cuda(torch::Tensor x, torch::Tensor w,
     
     int input_h = 1 + (TILE_H - 1) * stride + KH - 1;
     int input_w = 1 + (TILE_W - 1) * stride + KW - 1;
-    size_t shmem_bytes = (KH * KW + input_h * input_w) * sizeof(float);
+    size_t shmem_bytes = (TILE_C * KH * KW + TILE_C * input_h * input_w) * sizeof(float);
     gemm_gpu_o4_kernel<<<grid, block, shmem_bytes>>>(
         x.data_ptr<float>(),
         w.data_ptr<float>(),
