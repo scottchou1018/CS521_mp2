@@ -121,3 +121,5 @@ if __name__ == "__main__":
     conv_ref = F.conv2d(x_torch, model.weight, model.bias, stride=S, padding=P)
     print("JAX --- shape check:", out_jax.shape == conv_ref.shape)
     print("JAX --- correctness check:", torch.allclose(torch.from_numpy(np.array(out_jax)), conv_ref, atol=1e-1))
+
+    

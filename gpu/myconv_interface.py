@@ -42,9 +42,12 @@ print(f"Execution Time: {exe_time * 1000:.2f} ms")
 prof.export_chrome_trace("myconv_cuda.json")
 
 # Reference solution (PyTorch)
+
 out_ref = torch.nn.functional.conv2d(x, w, stride=stride, padding=pad)
+
+diff = torch.abs(out_ref - out_custom)
 
 # Test shape and correctness
 print("CUDA --- shape check:", out_custom.shape == out_ref.shape)
-print("CUDA --- correctness check:", torch.allclose(out_custom, out_ref, atol=1e-4))
+print("CUDA --- correctness check:", torch.allclose(out_custom, out_ref, atol=1e-4, rtol= 1e-5))
 print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))

@@ -5,8 +5,8 @@
 #include <cuda_runtime.h>
 
 // example
-#define TILE_H 8   
-#define TILE_W 8   
+#define TILE_H 16   
+#define TILE_W 16   
 #define TILE_C 16  
 
 
@@ -96,7 +96,7 @@ torch::Tensor conv_cuda(torch::Tensor x, torch::Tensor w,
 
     auto out = torch::zeros({N, C_out, out_h, out_w}, x.options());
 
-    dim3 block(8, 8);
+    dim3 block(TILE_H, TILE_W);
     dim3 grid((out_h + block.x - 1)/block.x,
               (out_w + block.y - 1)/block.y,
               N * C_out);

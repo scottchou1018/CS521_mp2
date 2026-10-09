@@ -6,6 +6,8 @@ from myconv import ConvModel
 import json
 import time
 
+torch.backends.cudnn.allow_tf32 = False
+
 if __name__ == "__main__":
     torch.manual_seed(0)
 
