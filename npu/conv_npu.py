@@ -71,7 +71,7 @@ def conv2d(X, W, bias):
     n_tiles_c_in = in_channels // c_in_pmax
 
     # TILE_M = nl.tile_size.gemm_stationary_fmax  # 128
-    TILE_H = 1
+    TILE_H = 2
     TILE_W = out_width
     assert TILE_H * TILE_W <= nl.tile_size.gemm_moving_fmax
     # Maximum free dimension of the moving operand of general matrix multiplication on tensor engine
@@ -106,9 +106,21 @@ def conv2d(X, W, bias):
 
                     # nisa.dma_copy(dst = W_sbuf[:,c_out_tile,c_in_tile,x,y,:], src=W[c_out_tile * TILE_N: (c_out_tile + 1) * TILE_N, c_in_tile * c_in_pmax : (c_in_tile + 1) * c_in_pmax, x, y])
 
-
+    
     for b in nl.affine_range(batch_size):
+        # for h_tile in nl.affine_range(n_tile_h):
         for h_id in nl.affine_range(out_pool_height):
+
+            X_t_sbuf = nl.ndarray(shape=(c_in_pmax, n_tiles_c_in, filter_height, input_width),
+                                  dtype=X.dtype,
+                                  buffer=nl.sbuf)
+            for c_in_tile in nl.affine_range(n_tiles_c_in):
+                c_in_low = c_in_tile * c_in_pmax
+                c_in_high = (c_in_tile + 1) * c_in_pmax
+                
+                for x in nl.affine_range(filter_height):
+                    X_t_sbuf[:, c_in_tile, x, :] = nl.load(X[b, c_in_low : c_in_high, x + h_id, :])
+
             for c_out_tile in nl.affine_range(n_tiles_c_out):
                 c_out_low = c_out_tile * TILE_N
                 c_out_high = c_out_low + TILE_N
@@ -116,18 +128,25 @@ def conv2d(X, W, bias):
                 out_psum = nl.ndarray(shape=(TILE_N, out_pool_width),
                                     dtype=X_out.dtype,
                                     buffer=nl.psum)
-                for x in nl.affine_range(filter_height):
-                    for y in nl.affine_range(filter_width):
-                        for c_in_tile in nl.affine_range(n_tiles_c_in):
-                            c_in_low = c_in_tile * c_in_pmax
-                            c_in_high = (c_in_tile + 1) * c_in_pmax
-                            X_t_sbuf = nl.ndarray(shape=(c_in_pmax, out_pool_width),
-                                                dtype=X.dtype,
-                                                buffer=nl.sbuf)
-                            X_t_sbuf = nl.load(X[b, c_in_low : c_in_high, x + h_id, y: y + out_pool_width])
+                for c_in_tile in nl.affine_range(n_tiles_c_in):
+                    c_in_low = c_in_tile * c_in_pmax
+                    c_in_high = (c_in_tile + 1) * c_in_pmax
+                    
+                    for x in nl.affine_range(filter_height):
+                        # X_t_sbuf = nl.ndarray(shape=(c_in_pmax, input_width),
+                        #                     dtype=X.dtype,
+                        #                     buffer=nl.sbuf)
+                        # X_t_sbuf = nl.load(X[b, c_in_low : c_in_high, x + h_id, :])
+
+                        for y in nl.affine_range(filter_width):
+
+                            # X_t_sbuf = nl.ndarray(shape=(c_in_pmax, out_pool_width),
+                            #                     dtype=X.dtype,
+                            #                     buffer=nl.sbuf)
+                            # X_t_sbuf = nl.load(X[b, c_in_low : c_in_high, x + h_id, y: y + out_pool_width])
 
                             # W_T_sbuf = nisa.nc_transpose(W_sbuf[:,c_out_tile,c_in_tile,x,y,:])
-                            out_psum += nl.matmul(W_sbuf[:,c_out_tile, c_in_tile,x,y,:], X_t_sbuf[...], transpose_x=True)
+                            out_psum += nl.matmul(W_sbuf[:,c_out_tile, c_in_tile,x,y,:], X_t_sbuf[:, c_in_tile, x,y : y + out_pool_width], transpose_x=True)
 
                 out_sbuf = nl.copy(out_psum, dtype=out_psum.dtype)
 
