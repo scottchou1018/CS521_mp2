@@ -73,7 +73,6 @@ def conv2d(X, W, bias):
     # TILE_M = nl.tile_size.gemm_stationary_fmax  # 128
     TILE_H = 2
     TILE_W = out_width
-    assert TILE_H * TILE_W <= nl.tile_size.gemm_moving_fmax
     # Maximum free dimension of the moving operand of general matrix multiplication on tensor engine
     # TILE_N = nl.tile_size.gemm_moving_fmax  # 512
     TILE_N = nl.tile_size.gemm_stationary_fmax # 128
@@ -95,70 +94,95 @@ def conv2d(X, W, bias):
     
     for c_out_tile in nl.affine_range(n_tiles_c_out):
         for c_in_tile in nl.affine_range(n_tiles_c_in):
-            for x in nl.affine_range(filter_height):
-                for y in nl.affine_range(filter_width):
-                    # W_sbuf[:,c_out_tile,c_in_tile,x,y,:] = nl.load(W[c_out_tile * TILE_N: (c_out_tile + 1) * TILE_N, c_in_tile * c_in_pmax : (c_in_tile + 1) * c_in_pmax, x, y])
-                    W_sbuf_tmp = nl.ndarray(shape=(c_in_pmax, TILE_N),
+            W_sbuf_tmp = nl.ndarray(shape=(c_in_pmax, TILE_N, filter_height, filter_width),
                                 dtype=W.dtype,
                                 buffer=nl.sbuf)
-                    nisa.dma_copy(dst = W_sbuf_tmp, src=W[c_out_tile * TILE_N: (c_out_tile + 1) * TILE_N, c_in_tile * c_in_pmax : (c_in_tile + 1) * c_in_pmax, x, y])
-                    W_sbuf[:,c_out_tile,c_in_tile,x,y,:] = nisa.nc_transpose(W_sbuf_tmp)
+            W_sbuf_tmp = nl.load(W[c_out_tile * TILE_N: (c_out_tile + 1) * TILE_N, c_in_tile * c_in_pmax : (c_in_tile + 1) * c_in_pmax, :, :])
 
+
+            for x in nl.affine_range(filter_height):
+                for y in nl.affine_range(filter_width):
+                    W_sbuf_sub = nl.ndarray(shape=(c_in_pmax, TILE_N), dtype=W.dtype)
+                    W_sbuf_sub = nl.copy(W_sbuf_tmp[:,:,x,y], dtype=W.dtype)
+                    W_sbuf[:,c_out_tile,c_in_tile,x,y,:] = nisa.nc_transpose(W_sbuf_sub)
                     # nisa.dma_copy(dst = W_sbuf[:,c_out_tile,c_in_tile,x,y,:], src=W[c_out_tile * TILE_N: (c_out_tile + 1) * TILE_N, c_in_tile * c_in_pmax : (c_in_tile + 1) * c_in_pmax, x, y])
 
     
     for b in nl.affine_range(batch_size):
-        # for h_tile in nl.affine_range(n_tile_h):
-        for h_id in nl.affine_range(out_pool_height):
+        for h_tile in nl.affine_range(n_tile_h):
+        # for h_id in nl.affine_range(out_pool_height):
 
-            X_t_sbuf = nl.ndarray(shape=(c_in_pmax, n_tiles_c_in, filter_height, input_width),
+            X_t_sbuf = nl.ndarray(shape=(c_in_pmax, n_tiles_c_in, TILE_H + filter_height - 1, input_width),
                                   dtype=X.dtype,
                                   buffer=nl.sbuf)
             for c_in_tile in nl.affine_range(n_tiles_c_in):
                 c_in_low = c_in_tile * c_in_pmax
                 c_in_high = (c_in_tile + 1) * c_in_pmax
                 
-                for x in nl.affine_range(filter_height):
-                    X_t_sbuf[:, c_in_tile, x, :] = nl.load(X[b, c_in_low : c_in_high, x + h_id, :])
+                for x in nl.affine_range(filter_height + TILE_H - 1):
+                    X_t_sbuf[:, c_in_tile, x, :] = nl.load(X[b, c_in_low : c_in_high, h_tile * TILE_H + x, :])
+            
 
             for c_out_tile in nl.affine_range(n_tiles_c_out):
                 c_out_low = c_out_tile * TILE_N
-                c_out_high = c_out_low + TILE_N
+                c_out_high = c_out_low + TILE_N            
+                out_psum = nl.ndarray(shape=(TILE_N, TILE_H, out_pool_width),
+                            dtype=X_out.dtype,
+                            buffer=nl.psum)
 
-                out_psum = nl.ndarray(shape=(TILE_N, out_pool_width),
-                                    dtype=X_out.dtype,
-                                    buffer=nl.psum)
-                for c_in_tile in nl.affine_range(n_tiles_c_in):
-                    c_in_low = c_in_tile * c_in_pmax
-                    c_in_high = (c_in_tile + 1) * c_in_pmax
-                    
-                    for x in nl.affine_range(filter_height):
-                        # X_t_sbuf = nl.ndarray(shape=(c_in_pmax, input_width),
-                        #                     dtype=X.dtype,
-                        #                     buffer=nl.sbuf)
-                        # X_t_sbuf = nl.load(X[b, c_in_low : c_in_high, x + h_id, :])
+                for h_id in nl.affine_range(TILE_H):
+                    for c_in_tile in nl.affine_range(n_tiles_c_in):
+                        for x in nl.affine_range(filter_height):
+                            for y in nl.affine_range(filter_width):
+                                out_psum[:, h_id,:] += nisa.nc_matmul(stationary = W_sbuf[:,c_out_tile, c_in_tile,x,y,:], moving= X_t_sbuf[:, c_in_tile, h_id + x,y:y+out_pool_width])
 
-                        for y in nl.affine_range(filter_width):
+                    out_sbuf = nl.copy(out_psum[:, h_id ,:], dtype=out_psum[:, h_id,:].dtype)
 
-                            # X_t_sbuf = nl.ndarray(shape=(c_in_pmax, out_pool_width),
-                            #                     dtype=X.dtype,
-                            #                     buffer=nl.sbuf)
-                            # X_t_sbuf = nl.load(X[b, c_in_low : c_in_high, x + h_id, y: y + out_pool_width])
+                    # bias_sbuf = nl.ndarray(TILE_N, dtype=bias.dtype, buffer=nl.sbuf)
+                    bias_sbuf = nl.load(bias[c_out_low : c_out_high])
+                    # bias_sbuf_reshaped = bias_sbuf.reshape((TILE_N, 1))
+                    out_bias = bias_sbuf + out_sbuf
 
-                            # W_T_sbuf = nisa.nc_transpose(W_sbuf[:,c_out_tile,c_in_tile,x,y,:])
-                            out_psum += nl.matmul(W_sbuf[:,c_out_tile, c_in_tile,x,y,:], X_t_sbuf[:, c_in_tile, x,y : y + out_pool_width], transpose_x=True)
-
-                out_sbuf = nl.copy(out_psum, dtype=out_psum.dtype)
-
-                # bias_sbuf = nl.ndarray(TILE_N, dtype=bias.dtype, buffer=nl.sbuf)
-                bias_sbuf = nl.load(bias[c_out_low : c_out_high])
-                # bias_sbuf_reshaped = bias_sbuf.reshape((TILE_N, 1))
-                out_bias = bias_sbuf + out_sbuf
-
-                nl.store(X_out[b, c_out_tile * TILE_N: (c_out_tile + 1) * TILE_N, h_id, :],
-                value=out_bias)
+                    nl.store(X_out[b, c_out_tile * TILE_N: (c_out_tile + 1) * TILE_N, h_tile * TILE_H + h_id, :],
+                    value=out_bias)
     
+    remind_h = out_pool_height - n_tile_h * TILE_H
+    if remind_h > 0:
+        for b in nl.affine_range(batch_size):
 
+            X_t_sbuf = nl.ndarray(shape=(c_in_pmax, n_tiles_c_in, remind_h + filter_height - 1, input_width),
+                                  dtype=X.dtype,
+                                  buffer=nl.sbuf)
+            for c_in_tile in nl.affine_range(n_tiles_c_in):
+                c_in_low = c_in_tile * c_in_pmax
+                c_in_high = (c_in_tile + 1) * c_in_pmax
+                
+                for x in nl.affine_range(filter_height + remind_h - 1):
+                    X_t_sbuf[:, c_in_tile, x, :] = nl.load(X[b, c_in_low : c_in_high, TILE_H * n_tile_h + x, :])
+            
+
+            for c_out_tile in nl.affine_range(n_tiles_c_out):
+                c_out_low = c_out_tile * TILE_N
+                c_out_high = c_out_low + TILE_N            
+                out_psum = nl.ndarray(shape=(TILE_N, remind_h, out_pool_width),
+                            dtype=X_out.dtype,
+                            buffer=nl.psum)
+
+                for h_id in nl.affine_range(remind_h):
+                    for c_in_tile in nl.affine_range(n_tiles_c_in):
+                        for x in nl.affine_range(filter_height):
+                            for y in nl.affine_range(filter_width):
+                                out_psum[:, h_id,:] += nisa.nc_matmul(stationary = W_sbuf[:,c_out_tile, c_in_tile,x,y,:], moving= X_t_sbuf[:, c_in_tile, h_id + x,y:y+out_pool_width])
+
+                    out_sbuf = nl.copy(out_psum[:, h_id ,:], dtype=out_psum[:, h_id,:].dtype)
+
+                    # bias_sbuf = nl.ndarray(TILE_N, dtype=bias.dtype, buffer=nl.sbuf)
+                    bias_sbuf = nl.load(bias[c_out_low : c_out_high])
+                    # bias_sbuf_reshaped = bias_sbuf.reshape((TILE_N, 1))
+                    out_bias = bias_sbuf + out_sbuf
+
+                    nl.store(X_out[b, c_out_tile * TILE_N: (c_out_tile + 1) * TILE_N, n_tile_h * TILE_H + h_id, :],
+                    value=out_bias)
 
     X_out = X_out.reshape((batch_size, out_channels, out_pool_height, out_pool_width))
     return X_out
